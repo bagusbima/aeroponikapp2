@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1092579870813",
+    "firebase_url": "https://aeroponik-39254-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "aeroponik-39254",
+    "storage_bucket": "aeroponik-39254.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1092579870813:android:fd1a261a707ca5ddd025b4",
+        "android_client_info": {
+          "package_name": "com.example.aeroponikapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZH7sAjytM2ChoTvF5ErtMkXeMK_GUveU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
