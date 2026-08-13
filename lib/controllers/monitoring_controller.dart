@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
-// Import http dan dart:convert sudah dihapus karena tidak dipakai lagi
+// Mengimport service notifikasi yang telah disesuaikan sebelumnya
+import '../services/notification_service.dart';
 
 class MonitoringController extends StatefulWidget {
   const MonitoringController({Key? key}) : super(key: key);
@@ -26,7 +27,8 @@ class _MonitoringControllerState extends State<MonitoringController> {
   
   double _timeCounter = 0; 
 
-  // (Bagian Variabel AI & Fungsi _analyzePlant SUDAH DIHAPUS)
+  // --- METRIK MONITORING LATENSI ---
+  int? _lastPacketTime; 
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +39,9 @@ class _MonitoringControllerState extends State<MonitoringController> {
       body: StreamBuilder(
         stream: dbRef.child("monitoring").onValue,
         builder: (context, snapshot) {
+          // 1. Catat waktu kedatangan event data dari Stream Firebase
+          final int receiveTime = DateTime.now().millisecondsSinceEpoch;
+
           // Default Values
           Map<String, dynamic> rawData = {}; 
           String systemMode = "MANUAL";
@@ -46,10 +51,22 @@ class _MonitoringControllerState extends State<MonitoringController> {
             final data = snapshot.data!.snapshot.value as Map;
             rawData = Map<String, dynamic>.from(data);
 
+            // ========================================================
+            // INTERSEPTOR & KALIBRASI DATA READ LATENSI
+            // ========================================================
+            if (_lastPacketTime != null) {
+              final int updateInterval = receiveTime - _lastPacketTime!;
+              
+              // Menampilkan metrik performa asinkron database di debug console
+              debugPrint("⏱️ [READ LATENCY] Jeda Pembaruan Stream Firebase: $updateInterval ms");
+            }
+            // Perbarui penanda waktu paket terakhir yang berhasil diproses
+            _lastPacketTime = receiveTime;
+
             systemMode = rawData['system_mode'] ?? "MANUAL";
             statusText = rawData['status_text'] ?? "Siaga";
 
-            // --- LOGIKA UPDATE GRAFIK ---
+            // --- AMBIL NILAI RIIL SENSOR ---
             double ph = double.tryParse(rawData['ph'].toString()) ?? 0;
             double ec = double.tryParse(rawData['ec'].toString()) ?? 0;
             double wTemp = double.tryParse(rawData['water_temp'].toString()) ?? 0;
@@ -57,6 +74,36 @@ class _MonitoringControllerState extends State<MonitoringController> {
             double hum = double.tryParse(rawData['hum'].toString()) ?? 0;
             double lux = double.tryParse(rawData['lux'].toString()) ?? 0;
 
+            // ==========================================
+            // LOGIKA INTERSEPTOR NOTIFIKASI OTOMATIS
+            // ==========================================
+            if (ph < 5.5 && ph > 0) {
+              NotificationService().pemicuNotifikasiLokal(
+                "⚠️ Peringatan Kadar pH Air!", 
+                "Nilai pH drop ke angka: $ph (Terlalu Asam). Segera periksa tandon!"
+              );
+            } else if (ph > 7.5) {
+              NotificationService().pemicuNotifikasiLokal(
+                "⚠️ Peringatan Kadar pH Air!", 
+                "Nilai pH naik ke angka: $ph (Terlalu Basa). Segera periksa tandon!"
+              );
+            }
+
+            if (ec < 800 && ec > 0) {
+              NotificationService().pemicuNotifikasiLokal(
+                "⚠️ Peringatan Nutrisi!", 
+                "Kepekatan nutrisi drop ke angka: $ec uS/cm. Kebutuhan tanaman kurang!"
+              );
+            }
+
+            if (wTemp > 30.0) {
+              NotificationService().pemicuNotifikasiLokal(
+                "⚠️ Peringatan Suhu Air!", 
+                "Suhu air tandon terlalu panas: $wTemp °C. Berisiko merusak akar!"
+              );
+            }
+
+            // --- LOGIKA UPDATE GRAFIK REALTIME ---
             if (_phSpots.isEmpty || _phSpots.last.x != _timeCounter) {
                _phSpots.add(FlSpot(_timeCounter, ph));
                _ecSpots.add(FlSpot(_timeCounter, ec));
@@ -89,9 +136,7 @@ class _MonitoringControllerState extends State<MonitoringController> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // (Bagian Card AI SUDAH DIHAPUS)
-                      
-                      // 1. GRID SENSOR
+                      // 1. GRID DATA SENSOR KONDISI AKTUAL
                       const Text("Parameter Sensor", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 15),
                       GridView.count(
@@ -115,8 +160,8 @@ class _MonitoringControllerState extends State<MonitoringController> {
                       const Text("Grafik Realtime", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 15),
 
-                      // 2. DAFTAR GRAFIK
-                      _buildChartContainer("Grafik pH (Keasaman)", _phSpots, Colors.blue, 0, 14, 1),
+                      // 2. RENDERING GRAFIK FL_CHART
+                      _buildChartContainer("Grafik pH (Keasaman)", _phSpots, Colors.blue, 0, 14, 2),
                       const SizedBox(height: 15),
 
                       _buildChartContainer("Grafik EC (Kepekatan)", _ecSpots, Colors.purple, 0, 2500, 500),
@@ -141,7 +186,7 @@ class _MonitoringControllerState extends State<MonitoringController> {
     );
   }
 
-  // --- WIDGET CHART ---
+  // --- REUSABLE WIDGET SINGLE LINE CHART ---
   Widget _buildChartContainer(String title, List<FlSpot> spots, Color color, double min, double max, double interval) {
     return Container(
       height: 250,
@@ -182,6 +227,7 @@ class _MonitoringControllerState extends State<MonitoringController> {
     );
   }
 
+  // --- REUSABLE WIDGET DOUBLE LINE CHART (SUHU AIR VS UDARA) ---
   Widget _buildDoubleLineChart(String title, List<FlSpot> spots1, List<FlSpot> spots2, double min, double max) {
     return Container(
       height: 250,
@@ -231,6 +277,7 @@ class _MonitoringControllerState extends State<MonitoringController> {
     );
   }
 
+  // --- REUSABLE SENSOR INFO CARD ---
   Widget _sensorCard(String title, String val, String unit, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -251,6 +298,7 @@ class _MonitoringControllerState extends State<MonitoringController> {
     );
   }
 
+  // --- HEADER APP BANNER ---
   Widget _buildHeader(String mode, String status) {
     return Container(
       width: double.infinity, padding: const EdgeInsets.fromLTRB(20, 50, 20, 25),
